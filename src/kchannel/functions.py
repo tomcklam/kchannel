@@ -36,7 +36,112 @@ def createLogger(loc):
 
     return logger
 
-def detectSF(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
+def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=6.0):
+    """ read coordinate file and return zero-indexed atom indices defining SF
+
+    Parameters
+    ----------
+    coor : str
+        The path to the coordinate file containing the ion channel
+    quiet : bool, optional
+        A flag used to print detailed information about SF (default is False)
+    o_cutoff: float
+        Distance cutoff for determining if backbone oxygen atoms are close enough to meet the geometric
+        requirement for being a part of SF
+    og1_cutoff: float
+        Same as o_cutoff, but it is for OG1 atom (like threonine's OG1)
+
+    Returns
+    -------
+    sf_layer: dict
+        consisting of two dictionaries containing atom idx (zero-based) and residue id of
+        SF's oxygen (backbone and hydroxyl) and CA atoms respectively
+
+    """
+    u = mda.Universe(coor, in_memory=False)
+
+    # Finding backbone oxygen atoms that meet the geometric requirements
+    protein_o = u.select_atoms(f"protein and name O and (resname GLY VAL TYR THR PHE ILE)", updating=False)
+
+    resid = np.array([atom.resid for atom in protein_o])
+    d_matrix = np.linalg.norm((protein_o.positions[:, np.newaxis] - protein_o.positions), axis=-1)
+    # not count itself and atoms of two nearest neighbours in sequence
+    d_matrix = d_matrix + (1e5*np.tril(np.ones(d_matrix.shape), k=2) * np.triu(np.ones(d_matrix.shape), k=-2))
+    n_neighbors = np.sum(d_matrix < o_cutoff, axis=1)
+    resid = resid[n_neighbors > 3] # at least 3 neighbors + 1 itself
+
+    tmp = []
+    sf_o_resid = []
+
+    # find atoms with consecutive resids
+    for i in range(len(resid)):
+        if i<len(resid)-1:
+            if resid[i] == resid[i+1]-1:
+                tmp.append(resid[i])
+            elif resid[i] == resid[i-1]+1:
+                tmp.append(resid[i])
+                sf_o_resid.append(tmp)
+                tmp = []
+        else:
+            if resid[i] == resid[i-1]+1:
+                tmp.append(resid[i])
+                sf_o_resid.append(tmp)
+
+    # (CA only) +1 to include the next residue after SF residues
+    sf_ca_resid = [resids + [resids[-1]+1] for resids in sf_o_resid]
+    sf_ca_resid = [i for chain in sf_ca_resid[:] for i in chain]
+    sf_o_resid = [i for chain in sf_o_resid[:] for i in chain]
+    sf_o = u.select_atoms(f"protein and name O and resid {' '.join([str(i) for i in sf_o_resid])}", updating=False)
+    sf_ca = u.select_atoms(f"protein and name CA and resid {' '.join([str(i) for i in sf_ca_resid])}", updating=False)
+
+    # find OG1 that form binding site(s)
+    protein_og1 = u.select_atoms(f"protein and name OG1", updating=False)
+    indices = np.array([atom.ix for atom in protein_og1])
+    resid = np.array([atom.resid for atom in protein_og1])
+    d_matrix = np.linalg.norm((protein_og1.positions[:, np.newaxis] - protein_og1.positions), axis=-1)
+    n_neighbors = np.sum(d_matrix < og1_cutoff, axis=1)
+    sf_og1_indices = indices[n_neighbors > 2]
+    sf_og1 = u.select_atoms(f"protein and name OG1 and index {' '.join([str(i) for i in sf_og1_indices])}", updating=False)
+    sf_o = u.select_atoms(f"protein and index  {' '.join([str(atom.ix) for atom in sf_o+sf_og1])}", updating=False)
+
+    #TODO: assigning binding sites based on atoms' coordinates
+    sf_layer = {'O':{}, 'CA':{}}
+    for sf_atom, name in zip([sf_o, sf_ca], ['O', 'CA']):
+        # number of layer = # atoms // 4
+        layer_id = len(sf_atom) // 4 - 1
+        for atom in sf_atom:
+            if layer_id not in sf_layer[name].keys():
+                sf_layer[name][layer_id] = {'idx': [atom.ix], 'resid':[atom.resid],
+                                           'resname':[atom.resname], 'name':[atom.name]}
+            else:
+                sf_layer[name][layer_id]['idx'].append(atom.ix)
+                sf_layer[name][layer_id]['resid'].append(atom.resid)
+                sf_layer[name][layer_id]['resname'].append(atom.resname)
+                sf_layer[name][layer_id]['name'].append(atom.name)
+            layer_id = layer_id-1 if layer_id != 0 else (len(sf_atom) // 4 - 1)
+
+    # rearrange order so that the first atom is the diagonal pair of the second atom,
+    # and the third is the diagonal pair of the fourth one
+    sf_ca_0_pos = u.select_atoms('all').positions[sf_layer['CA'][0]['idx']]
+    i_oppositeTo0 = np.linalg.norm(sf_ca_0_pos - sf_ca_0_pos[0], axis=1).argmax()
+
+    if not quiet:
+        print(f"idx\tlayer\tchain\tresid\tresname\tname")
+    for atomtype in sf_layer.keys():
+        for layer in sf_layer[atomtype].keys():
+            for info in sf_layer[atomtype][layer].keys():
+                sf_layer[atomtype][layer][info][1], sf_layer[atomtype][layer][info][i_oppositeTo0] = \
+                sf_layer[atomtype][layer][info][i_oppositeTo0], sf_layer[atomtype][layer][info][1]
+            if atomtype == 'O' and not quiet:
+                for chain_id, idx in enumerate(sf_layer[atomtype][layer]['idx']):
+                    resid = sf_layer[atomtype][layer]['resid'][chain_id]
+                    resname = sf_layer[atomtype][layer]['resname'][chain_id]
+                    name = sf_layer[atomtype][layer]['name'][chain_id]
+                    print(f"{idx}\t{layer}\t{chain_id}\t{resid}\t{resname}\t{name}")
+
+    return sf_layer
+
+def detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
     """ read coordinate file and return zero-indexed atom indices defining SF
 
     Parameters
