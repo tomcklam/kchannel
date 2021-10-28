@@ -603,7 +603,7 @@ def hittingTimes(occupancy, jumps, intStates, finalStates, n_bs_jump=4, backward
 
     return hittingTimes, k_netjumps_counts, w_netjumps_counts
 
-def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02):
+def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02, backward=False):
     """ compute hitting time for all transition pairs
 
     Parameters
@@ -643,7 +643,7 @@ def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02):
 
         for occupancy, jumps in zip(occupancy_all, jumps_all):
             hTs, k_j_counts, w_j_counts = hittingTimes(occupancy, jumps, initialStates, finalStates,
-                                                                  n_bs_jump=4, backward=False)
+                                                                  n_bs_jump=4, backward=backward)
             hTs_all += hTs
             k_j_counts_all += k_j_counts
             w_j_counts_all += w_j_counts
