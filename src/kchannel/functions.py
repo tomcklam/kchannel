@@ -578,7 +578,7 @@ def computeJump_6BS_ignoreS0Scav(occ_t0, occ_t1, t0=0.0):
 def run(coor, traj, CADistance=False, ignoreS0ScavJump=True):
     path = os.path.dirname(traj)
 
-    log_loc = os.path.join(path, 'results.log')
+    log_loc = os.path.abspath(os.path.join(path, 'results.log'))
 
     # remove handlers if any
     logger = createLogger(log_loc)
@@ -653,7 +653,7 @@ def run(coor, traj, CADistance=False, ignoreS0ScavJump=True):
         data = np.hstack((occupancy.reshape(-1, 1), jumps, flips)).astype("<8U")
         columns = ['occupancy', 'j_k', 'j_w'] + [f'flip_{i}' for i in range(len(sf_o_idx))]
 
-    data_loc = os.path.join(path, 'results.csv')
+    data_loc = os.path.abspath(os.path.join(path, 'results.csv'))
     data = pd.DataFrame(data, columns=columns)
     _ = data.to_csv(data_loc)
     logger.info(f"Results saved to {data_loc}")
