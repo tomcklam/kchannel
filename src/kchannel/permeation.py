@@ -11,11 +11,118 @@ class Channel:
         self.occupancy_4_all = []
         self.occupancy_6_all = []
         self.jumps_all = []
+        self.jumps_4_all = []
+        self.jumps_6_all = []
         self.dts = None
         self.dt = None
         self.currents = None
         self.current = None
         self.total_times = None
+
+def loadResults(results_loc):
+    """
+    Parameters
+    ----------
+    results_loc: list of strings
+        directories in which the results (results.csv and results.log) are stored
+
+    Returns
+    -------
+    channel: object
+        info about the channel, defined by the class Channel
+
+    """
+    jumps_all = []
+    occupancy_4_all = []
+    occupancy_6_all = []
+    total_times = []
+    dts = []
+    currents = []
+
+
+    for loc in results_loc:
+        data_loc = os.path.join(loc, 'results.csv')
+        df = pd.read_csv(data_loc, index_col=0)
+        occ = df['occupancy'].to_numpy().astype(str)
+        jumps = df[['j_k', 'j_w']].to_numpy().astype(int)
+
+        occupancy_6_all.append(occ)
+        occ_4 = np.array([s[1:-1] for s in occ])
+        occupancy_4_all.append(occ_4)
+        jumps_all.append(jumps)
+
+        log_loc = os.path.join(loc, 'results.log')
+        with open(log_loc, 'r') as f:
+            log = f.read()
+        total_time = float(re.search(r'Total time\D+(\d+\.\d+)', log).group(1))
+        dt = float(re.search(r'dt\D+(\d+\.\d+)', log).group(1))
+        current = float(re.search(r'Current\D+(\d+\.\d+)', log).group(1))
+        total_times.append(total_time)
+        dts.append(dt)
+        currents.append(current)
+    channel = Channel()
+    channel.occupancy_4_all = occupancy_4_all
+    channel.occupancy_6_all = occupancy_6_all
+    channel.jumps_all = jumps_all
+    channel.total_times = np.array(total_times)
+    channel.dts = np.array(dts)
+    channel.currents = np.array(currents)
+
+    return channel
+
+def computeStats(channel):
+    """
+    Parameters
+    ----------
+    channel: object
+        info about the channel, defined by the class Channel
+
+    Returns
+    -------
+    stats: Pandas dataframe
+        store statistics of trajectories, such as total time, lag time, current
+        and occupation state populations
+
+    states: Pandas dataframe
+        point estimate and bootstrap confidence interval for occupation states
+    """
+    current_bs = scipy.stats.bootstrap((channel.currents,), np.mean, confidence_level=.95, n_resamples=10000, method='BCa')
+    current_bs_l, current_bs_h = current_bs.confidence_interval
+    channel.current = (np.mean(channel.currents), current_bs_l, current_bs_h)
+
+    print(f"Current (pA): {channel.current[0]:.3f}\t{current_bs_l:.3f} - {current_bs_h:.3f}\n")
+
+    states, counts = np.unique(np.concatenate(channel.occupancy_6_all), return_counts=True)
+    sort_idx = np.argsort(counts)[::-1]
+    states = states[sort_idx]
+    population = counts[sort_idx] / np.sum(counts)
+
+    stats_dict = {'T (ns)':channel.total_times,
+                  'dt (ns)':channel.dts,
+                  'current (pA)':channel.currents}
+
+    states_dict = {}
+    states_dict['state'] = states
+    states_dict['p_mean'] = population
+
+    p_ls = []
+    p_hs = []
+
+    for s, p_mean in zip(states, population):
+        ps = np.array([np.mean(occupancy == s) for occupancy in channel.occupancy_6_all])
+        stats_dict[s] = ps
+
+        p_bs = scipy.stats.bootstrap((ps,), np.mean, confidence_level=.95, n_resamples=10000, method='BCa')
+        p_l, p_h = p_bs.confidence_interval
+        p_ls.append(p_l)
+        p_hs.append(p_h)
+
+    states_dict['p_l'] = p_ls
+    states_dict['p_h'] = p_hs
+
+    stats = pd.DataFrame(stats_dict)
+    states = pd.DataFrame(states_dict)
+    return stats, states
 
 def permeationEventsPartition(occupancy, jump, seedState, n_bs_jump):
     """ partitioning trajectory into permeation events
@@ -92,47 +199,6 @@ def permeationEventsPartition(occupancy, jump, seedState, n_bs_jump):
 
     return stationaryPhase_indices, permeationCycle_indices
 
-def findCycles(occupancy_all, jumps_all, seedState, n_bs_jump=4):
-    """ Given occupancy and jumps of the trajectories, the seed state, and n_bs_jump
-    that define the # BSs in which jumps in and out are considered,
-    give the cycles that start and end in the seed state
-
-    Parameters
-    ----------
-    occupancy_all: list of arrays of size N
-        occupancy for all trajectories
-
-    jumps_all: list of arrays of size (N-1, 2)
-        net jumps for ion and water for all trajectories
-
-    seedState: string
-        the SF occupation state that the cycles start and end in
-
-    n_bs_jump: int
-        # binding sites considered in permeation
-        It is used to compute number of k jumps (n_bs_jump+1) one complete
-        permeation event takes
-
-    Returns
-    -------
-    permeationCycle_indices: list of lists of arrays
-        contain the cycles identified in each trajectory
-    """
-    permeationCycles = []
-    p_indices_all = []
-
-    for occupancy, jumps in zip(occupancy_all, jumps_all):
-        _ , p_indices = permeationEventsPartition(occupancy, jumps, seedState, n_bs_jump=n_bs_jump)
-        p_indices_all.append(p_indices)
-
-        permeationCycles_ = [cycleCompression(occupancy[i:j+1],
-                                              jumps[i:j+1],
-                                              n_bs_jump=n_bs_jump)
-                             for (i, j) in p_indices]
-        permeationCycles.append(permeationCycles_)
-
-    return permeationCycles, p_indices_all
-
 def cycleCompression(occupancy_cycle, k_jumps_sub, n_bs_jump):
     """ Given an uncompressed (involving osciliation between states without net jumps)
         trajectory segment that starts and ends in the same state and records one
@@ -183,6 +249,277 @@ def cycleCompression(occupancy_cycle, k_jumps_sub, n_bs_jump):
         print(f"netjump != {(n_bs_jump+1)}")
     return occupancy_compressed
 
+def findCycles(occupancy_all, jumps_all, seedState, n_bs_jump=4):
+    """ Given occupancy and jumps of the trajectories, the seed state, and n_bs_jump
+    that define the # BSs in which jumps in and out are considered,
+    give the cycles that start and end in the seed state
+
+    Parameters
+    ----------
+    occupancy_all: list of arrays of size N
+        occupancy for all trajectories
+
+    jumps_all: list of arrays of size (N-1, 2)
+        net jumps for ion and water for all trajectories
+
+    seedState: string
+        the SF occupation state that the cycles start and end in
+
+    n_bs_jump: int
+        # binding sites considered in permeation
+        It is used to compute number of k jumps (n_bs_jump+1) one complete
+        permeation event takes
+
+    Returns
+    -------
+    permeationCycle_indices: list of lists of arrays
+        contain the cycles identified in each trajectory
+    """
+    permeationCycles = []
+    p_indices_all = []
+
+    for occupancy, jumps in zip(occupancy_all, jumps_all):
+        _ , p_indices = permeationEventsPartition(occupancy, jumps, seedState, n_bs_jump=n_bs_jump)
+        p_indices_all.append(p_indices)
+
+        permeationCycles_ = [cycleCompression(occupancy[i:j+1], jumps[i:j+1], n_bs_jump=n_bs_jump)
+                             for (i, j) in p_indices]
+        permeationCycles.append(permeationCycles_)
+
+    return permeationCycles, p_indices_all
+
+def computeTransProb(trajs, return_matrix=False, quiet=False):
+    """ given trajectories, compute transition probabilities
+
+    Parameters
+    ----------
+    trajs: list of arrays of size N    or   list of lists of arrays
+        trajectories, can be occupancy or cycles for all trajectories
+
+    return_matrix: boolean
+        if True, return also the transition matrix and mapping between indices and state names
+
+    quiet: boolean
+        if True, do not print anything to stdout
+
+    Returns
+    -------
+    trans_prob_dict: dict
+        dict containing count and prob of states, and the transition probs
+
+    trans_prob: narray (optional)
+        transition matrix
+
+    state_to_idx: dict
+        map from state name to idx
+
+    idx_to_state: dict
+        map from idx to state name (reverse of state_to_idx)
+
+    """
+    # for list of lists of arrays
+    if isinstance(trajs, list) and isinstance(trajs[0], list):
+        trajs = [s for traj in trajs for s in traj]
+
+    states, counts = np.unique(np.concatenate(trajs), return_counts=True)
+    sort_idx = np.argsort(counts)[::-1]
+    states = states[sort_idx]
+    counts = counts[sort_idx]
+    counts_total = np.sum(counts)
+
+#     trans_prob_dict = {state:{"count":count, "prob":count/counts_total} \
+#                        for state, count in zip(states, counts)}
+    trans_prob_dict = {state:{} for state in states}
+
+    state_to_idx = {s:i for i, s in enumerate(states)}
+    idx_to_state = {i:s for i, s in enumerate(states)}
+
+    n_states = len(states)
+    trans_counts = np.zeros((n_states, n_states), dtype=int)
+
+    for traj in trajs:
+        for t in range(len(traj)-1):
+            i, j = state_to_idx[traj[t]], state_to_idx[traj[t+1]]
+            trans_counts[i,j] += 1
+    # trans_counts[trans_counts < threshold] = 0
+    trans_prob = np.nan_to_num(np.asarray([trans_counts[i] / (np.sum(trans_counts[i]) or 1.0) for i in range(n_states)]))
+
+    n_outward_total = np.sum(trans_counts, axis=1)
+
+    for i in range(n_states):
+        state_i = idx_to_state[i]
+        n_total = n_outward_total[i]
+
+
+        indices = np.argsort(trans_prob[i])[::-1]
+        for j in indices:
+            state_j = idx_to_state[j]
+            p = trans_prob[i, j]
+            if n_total < 2:
+                err = .0
+            else:
+                err = 1.96 * np.sqrt(p*(1-p)/(n_total-1))
+            n = trans_counts[i, j]
+            trans_prob_dict[state_i][state_j] = (trans_prob[i, j], err, n)
+
+        trans_prob_dict[state_i]['count_out'] = n_total
+        trans_prob_dict[state_i]['count'] = counts[i]
+        trans_prob_dict[state_i]['prob'] = counts[i]/counts_total
+
+    if not quiet:
+        for state_i, state_i_dict in trans_prob_dict.items():
+            print(f"\n========= {state_i} {state_i_dict['count_out']}===========")
+            for k, v in state_i_dict.items():
+                if k not in ['count', 'prob', 'count_out']:
+                    state_j = k
+                    p, err, n = v
+                    if p != .0:
+                        print(f"{state_j:<10}\t{p:<12.5%} ± {err:<12.5%} {n}")
+
+    if return_matrix:
+        return trans_prob, state_to_idx, idx_to_state
+    else:
+        return trans_prob_dict
+
+def plotCycles(cycles, state_threshold=.05, label_threshold=.05, offset=0.1, scale=0.1,
+               figsize=(10,10), save=None, returnCycleProb=False, returnMainPath=False):
+    """ given trajectories, compute transition probabilities
+
+    Parameters
+    ----------
+    cycles: list of lists of arrays
+        contain the cycles identified in each trajectory
+
+    Returns
+    -------
+    returnCycleProb: boolean
+        If True, return cycles_dict
+            cycles_dict[state_i][state_j] is the probability of observing the transition
+            state_i -> state_j in a permeation cycle which starts and ends in a specified state
+            *** so these probs are seed state-dependent ***
+
+    returnMainPath: boolean
+        If True, return the dominant cycle for determining MFPT using permeationMFPT()
+
+    """
+    # flatten nested cycles
+    cycles_flattened = [c for cycle in cycles for c in cycle]
+    n_cycles = len(cycles_flattened)
+
+    # probs: dict, key=state, value=(target state, %, count)
+    cycles_dict = computeTransProb(cycles_flattened, quiet=True)
+
+    ############################################################
+
+    # find the backbone of the cyclic graph
+    states_all = np.array([k for k in cycles_dict.keys()])
+    state_counts = np.array([cycles_dict[state]['count_out'] for state in states_all])
+    state_counts_total = np.sum(state_counts)
+    state_p = state_counts / state_counts_total
+    states_selected = states_all[state_p > state_threshold]
+
+    # assume that states are already sorted in descending order of population
+    seedState = list(cycles_dict)[0]
+
+    backbone = []
+    backbone.append(seedState)
+
+    state = list(cycles_dict[seedState].keys())[0]
+    backbone.append(state)
+
+    while(backbone[-1] != seedState):
+        state = list(cycles_dict[state].keys())[0]
+        backbone.append(state)
+
+    # assign the side branches of the cyclic graph
+    non_backbone = states_selected[np.in1d(states_selected, backbone, invert=True)]
+    sidechain = {k:[] for k in backbone}
+
+    # put next to the backbone state before the target state which the non-backbone
+    # state has highest probability transitioning to
+    for state_i in non_backbone:
+        j_idx = None
+        for state_j in list(cycles_dict[state_i]):
+            try:
+                j_idx = backbone.index(state_j)
+                break
+            except:
+                continue
+        sidechain[backbone[j_idx-1]].append(state_i)
+
+    ############################################################
+    # determine position of nodes
+
+    # centered at origin by default
+    pos = nx.circular_layout(nx.path_graph(backbone))
+    for state_backbone, states_sidechain in sidechain.items():
+        vec = pos[state_backbone] / np.linalg.norm(pos[state_backbone])
+        for j, state_sidechain in enumerate(states_sidechain):
+            pos[state_sidechain] = pos[state_backbone] + offset * vec + vec * j * scale
+
+    ############################################################
+    # initialize graph
+    _ = plt.figure(1,figsize=figsize, dpi=300)
+    _ = plt.axis('equal')
+    G = nx.DiGraph()
+    G.add_nodes_from(states_selected)
+    sizes = np.array([cycles_dict[state]['count_out'] for state in states_selected])
+
+    nx.draw_networkx(G, pos, node_color='orange',
+                     node_size=100*sizes/n_cycles,
+                     alpha=1, font_size=6, font_color='k')
+    ############################################################
+
+    for state_i in states_all:
+        _ = cycles_dict[state_i].pop('count')
+        cycles_dict[state_i]['prob'] = cycles_dict[state_i]['count_out'] / n_cycles
+        for state_j in states_all:
+            # here p is defined as the probability of having this transition in every
+            # observed permeation cycle, different from the Markov transition prob
+            _, _, count = cycles_dict[state_i][state_j]
+            p = count / n_cycles
+            if n_cycles < 2:
+                err = 0
+            else:
+                err = 1.96 * np.sqrt(p*(1-p)/ (n_cycles-1))
+            cycles_dict[state_i][state_j] = (p, err, count)
+
+    for state_i in states_selected:
+        for state_j in states_selected:
+            if state_i != state_j:
+                p, err, _ = cycles_dict[state_i][state_j]
+                alpha = np.tanh(3*p)/np.tanh(3)
+                _ = nx.draw_networkx_edges(G, pos,
+                                           edgelist=[(state_i, state_j, 2)],
+                                           arrowsize=12,
+                                           min_source_margin=10, min_target_margin=10,
+                                           alpha=alpha,
+                                           connectionstyle="arc3,rad=0.2")
+                if p > label_threshold:
+                    label = fr"{p*100:.1f}$\pm${err*100:.1f}%"
+                    _ = nx.draw_networkx_edge_labels(G, pos, edge_labels={(state_i, state_j):label} ,
+                                                     label_pos=0.5, font_size=6,
+                                                     font_color='k', font_family='sans-serif',
+                                                     font_weight='normal', alpha=alpha, bbox=dict(alpha=0),
+                                                     horizontalalignment='center', verticalalignment='center',
+                                                     ax=None, rotate=True)
+    _ = plt.tight_layout()
+    if save is not None:
+        _ = plt.savefig(save, dpi=400)
+        print(f"saved as {save}")
+    _ = plt.show()
+
+    if returnMainPath:
+        transition_pairs = [[k]for k in sidechain.keys()]
+        transition_pairs_tmp = [[transition_pairs[i], transition_pairs[i+1]] for i in range(len(transition_pairs)-1)]
+        transition_pairs = transition_pairs_tmp + [[transition_pairs[-1], transition_pairs[0]]]
+        if returnCycleProb:
+            return cycles_dict, transition_pairs
+        else:
+            return transition_pairs
+    if returnCycleProb:
+        return cycles_dict
+
 def hittingTimes(occupancy, jumps, intStates, finalStates, n_bs_jump=4, backward=False):
     """ compute hitting time for transition pairs within one permeation event,
         i.e. abs(k_netjumps) < n_bs_jump+1
@@ -193,7 +530,7 @@ def hittingTimes(occupancy, jumps, intStates, finalStates, n_bs_jump=4, backward
         tranjectory expressed in the form of SF occupancy
 
     jumps: arrays of size (N-1, 2)
-        net jumps for ion and water for all trajectories
+        net jumps for ion and water for one trajectory
 
     intStates: list of strings
         the SF occupation state that the transitions start in
@@ -266,7 +603,36 @@ def hittingTimes(occupancy, jumps, intStates, finalStates, n_bs_jump=4, backward
 
     return hittingTimes, k_netjumps_counts, w_netjumps_counts
 
-def permeationTimes(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=20/1000):
+def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02):
+    """ compute hitting time for all transition pairs
+
+    Parameters
+    ----------
+    occupancy_all: list of arrays of size N
+        all tranjectories expressed in the form of SF occupancy
+
+    jumps_all: list of arrays of size (N-1, 2)
+        net jumps for ion and water for all trajectories
+
+    pairs: list of lists of lists of strings
+        pairs[i][0] is the list containing all strings of initial states
+        in the i-th transition pair
+        pairs[i][1] is the list containing all strings of final states
+        in the i-th transition pair
+
+    n_bs_jump: int
+        # binding sites considered in permeation
+        It is used to compute number of k jumps (n_bs_jump+1) one complete
+        permeation event takes
+
+    dt: float
+        lag time in ns
+
+    Returns
+    -------
+    df: Pandas dataframe
+        all computed mean first passage times
+    """
     data = []
     for initialStates, finalStates in pairs:
         hTs_all = []
@@ -301,300 +667,4 @@ def permeationTimes(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=20/1000):
                       columns=["initial","final", "mean (ns)", "low (ns)",
                                "high (ns)", "n", "k_f", "w_f"])
     return df
-
-def plotCycles(cycles, threshold=0.05, dist=0.2, figsize=(10,10), save=None,
-               returnCycleProb=False, returnMainPath=False, returnFullPaths=False):
-    """
-    Parameters
-    ----------
-    cycles: array
-        occupancy for a trajectory segment
-
-    Returns
-    -------
-
-    """
-    # flatten nested cycles
-    cycles_flattened = [c for cycle in cycles for c in cycle]
-    n_cycles = len(cycles_flattened)
-
-    # probs: dict, key=state, value=(target state, %, count)
-    # counts: dict, key=state, value=(count, population)
-    probs, counts = markov(cycles_flattened, embedded=False, quiet=True)
-
-    probs_individual = []
-    counts_individual = []
-
-    for cycle in cycles:
-        p, c = markov(cycle, embedded=False, quiet=True)
-        probs_individual.append(p)
-        counts_individual.append(c)
-
-    # find the backbone of the cyclic graph
-    states_all = np.array([k for k in probs.keys()])
-    backbone = []
-
-    # assume that probs are already sorted in descending order of population
-    state = list(probs)[0]
-    backbone.append(state)
-
-    state = list(probs[state].keys())[0]
-    backbone.append(state)
-
-    while(backbone[-1] != list(probs)[0]):
-        state = list(probs[state].keys())[0]
-        backbone.append(state)
-
-    # assign the side branches of the cyclic graph
-    non_backbone = states_all[np.in1d(states_all, backbone, invert=True)]
-    sidechain = {k:[] for k in backbone}
-
-    #     for state_1 in non_backbone:
-    #         scores = [computeSimilarity(state_1, state_2) for state_2 in backbone]
-    #         backbone_state = backbone[np.argmax(scores)]
-    #         sidechain[backbone_state].append(state_1)
-
-    # put next to the backbone state before the target state which the non-backbone
-    # state has highest probability transitioning to
-    for state_i in non_backbone:
-        j_idx = None
-        for state_j in list(probs[state_i]):
-            try:
-                j_idx = backbone.index(state_j)
-                break
-            except:
-                continue
-        sidechain[backbone[j_idx-1]].append(state_i)
-
-
-    # determine position of nodes
-    pos = nx.circular_layout(nx.path_graph(backbone))
-    for sel in sidechain.keys():
-        distance = np.linalg.norm(np.asarray([v for v in pos.values()]) - pos[sel], axis=1)
-        coor = list(pos.values())[np.argmax(distance)]
-
-        c = (1.4 + dist * np.arange(len(sidechain[sel]))).reshape(-1, 1)
-        newpos = coor + c * (pos[sel] - coor)
-
-        for k, v in zip(sidechain[sel], newpos):
-            pos[k] = v
-    # plot graph
-    _ = plt.figure(1,figsize=figsize, dpi=200)
-    _ = plt.axis('equal')
-    G = nx.DiGraph()
-    G.add_nodes_from(states_all)
-    sizes = np.array([counts[state][0] for state in states_all])
-
-
-    nx.draw_networkx(G, pos, node_color='orange',
-                     node_size=1000*sizes/n_cycles,
-                     alpha=1, font_size=12, font_color='k')
-
-
-    p_dict = {}
-    for state_i in states_all:
-        p_dict_ = {}
-        for state_j in states_all:
-            if state_i != state_j:
-                _ , _, count = probs[state_i][state_j]
-                p = count / n_cycles
-                err = 1.96 * np.sqrt(p*(1-p)/ (n_cycles-1))
-                alpha = np.tanh(2*count/n_cycles)/np.tanh(2)
-                _ = nx.draw_networkx_edges(G, pos,
-                                           edgelist=[(state_i, state_j, 2)],
-                                           arrowsize=16,
-                                           min_source_margin=30, min_target_margin=30,
-                                           alpha=alpha,
-                                           connectionstyle="arc3,rad=0.2")
-                # create edge label
-                if p > threshold:
-                    label = fr"{p*100:.1f}$\pm${err*100:.1f}%"
-                      # make labels lie on outside
-#                     edge = pos[state_j] - pos[state_i]
-#                     normal = np.array([-edge[1]/edge[0], 1])
-#                     normal /= np.linalg.norm(normal)
-#                     direction_vec = np.cross(np.array([0, 0, -1]), edge)
-#                     direction = np.sign(np.dot(normal, direction_vec[:-1]))
-#                     move = direction * normal * np.linalg.norm( .5 * (pos[state_j] - pos[state_i]) ) * np.sin(np.pi/10)
-#                     pos_tmp = {state_i:(pos[state_i]+move), state_j:(pos[state_j]+move)}
-                    _ = nx.draw_networkx_edge_labels(G, pos, edge_labels={(state_i, state_j):label} ,
-                                                     label_pos=0.5, font_size=8,
-                                                     font_color='k', font_family='sans-serif',
-                                                     font_weight='normal', alpha=alpha, bbox=dict(alpha=0),
-                                                     horizontalalignment='center', verticalalignment='center',
-                                                     ax=None, rotate=True)
-                p_dict_[state_j] = (p, err)
-        p_dict[state_i] = p_dict_
-
-    _ = plt.tight_layout()
-    if save is not None:
-        _ = plt.savefig(saveName, dpi=1000)
-        print(f"saved as {saveName}")
-    _ = plt.show()
-
-    if returnMainPath:
-        transition_pairs = [[k]for k in sidechain.keys()]
-        transition_pairs_tmp = [[transition_pairs[i], transition_pairs[i+1]] for i in range(len(transition_pairs)-1)]
-        transition_pairs = transition_pairs_tmp + [[transition_pairs[-1], transition_pairs[0]]]
-        if returnCycleProb:
-            return p_dict, transition_pairs
-        else:
-            return transition_pairs
-
-    if returnFullPaths:
-        transition_pairs = [[k]+sidechain[k] for k in sidechain.keys()]
-        transition_pairs_tmp = [[transition_pairs[i], transition_pairs[i+1]] for i in range(len(transition_pairs)-1)]
-        transition_pairs = transition_pairs_tmp + [[transition_pairs[-1], transition_pairs[0]]]
-        if returnCycleProb:
-            return p_dict, transition_pairs
-        else:
-            return transition_pairs
-
-def loadResults(results_loc):
-    jumps_all = []
-    occupancy_4_all = []
-    occupancy_6_all = []
-    total_times = []
-    dts = []
-    currents = []
-
-
-    for loc in results_loc:
-        data_loc = os.path.join(loc, 'results.csv')
-        df = pd.read_csv(data_loc, index_col=0)
-        occ = df['occupancy'].to_numpy().astype(str)
-        jumps = df[['j_k', 'j_w']].to_numpy().astype(int)
-
-        occupancy_6_all.append(occ)
-        occ_4 = np.array([s[1:-1] for s in occ])
-        occupancy_4_all.append(occ_4)
-        jumps_all.append(jumps)
-
-        log_loc = os.path.join(loc, 'results.log')
-        with open(log_loc, 'r') as f:
-            log = f.read()
-        total_time = float(re.search(r'Total time\D+(\d+\.\d+)', log).group(1))
-        dt = float(re.search(r'dt\D+(\d+\.\d+)', log).group(1))
-        current = float(re.search(r'Current\D+(\d+\.\d+)', log).group(1))
-        total_times.append(total_time)
-        dts.append(dt)
-        currents.append(current)
-    channel = Channel()
-    channel.occupancy_4_all = occupancy_4_all
-    channel.occupancy_6_all = occupancy_6_all
-    channel.jumps_all = jumps_all
-    channel.total_times = np.array(total_times)
-    channel.dts = np.array(dts)
-    channel.currents = np.array(currents)
-
-    return channel
-
-def computeStats(channel):
-    current_bs = scipy.stats.bootstrap((channel.currents,), np.mean, confidence_level=.95, n_resamples=10000, method='BCa')
-    current_bs_l, current_bs_h = current_bs.confidence_interval
-    channel.current = (np.mean(channel.currents), current_bs_l, current_bs_h)
-    print(f"Current (pA): {channel.current:.3f}\t{current_bs_l:.3f} - {current_bs_h:.3f}\n")
-
-    states, counts = np.unique(np.concatenate(channel.occupancy_6_all), return_counts=True)
-    sort_idx = np.argsort(counts)[::-1]
-    states = states[sort_idx]
-    population = counts[sort_idx] / np.sum(counts)
-
-    stats_dict = {'T (ns)':channel.total_times,
-                  'dt (ns)':channel.dts,
-                  'current (pA)':channel.currents}
-
-    states_dict = {}
-    states_dict['state'] = states
-    states_dict['p_mean'] = population
-
-    p_ls = []
-    p_hs = []
-
-    for s, p_mean in zip(states, population):
-        ps = np.array([np.mean(occupancy == s) for occupancy in channel.occupancy_6_all])
-        stats_dict[s] = ps
-
-        p_bs = scipy.stats.bootstrap((ps,), np.mean, confidence_level=.95, n_resamples=10000, method='BCa')
-        p_l, p_h = p_bs.confidence_interval
-        p_ls.append(p_l)
-        p_hs.append(p_h)
-
-    states_dict['p_l'] = p_ls
-    states_dict['p_h'] = p_hs
-
-    stats = pd.DataFrame(stats_dict)
-    states = pd.DataFrame(states_dict)
-    return stats, states
-
-def markov(trajs, threshold=1, embedded=False, return_matrix=False, quiet=False):
-    if isinstance(trajs, np.ndarray):
-        trajs = [trajs]
-    #assert isinstance(trajs, list)
-    #assert isinstance(trajs[0], np.ndarray)
-    trans_prob_dict = {}
-    n_outward_total_dict = {}
-
-    if isinstance(trajs, np.ndarray):
-        trajs = [trajs]
-    if isinstance(trajs, list) and isinstance(trajs[0], list):
-        trajs = [s for traj in trajs for s in traj]
-
-    states, counts = np.unique(np.concatenate(trajs), return_counts=True)
-    sort_idx = np.argsort(counts)[::-1]
-    states = states[sort_idx]
-    counts = counts[sort_idx]
-    counts_total = np.sum(counts)
-
-    population = {states[i]:counts[i] / counts_total for i in range(len(counts))}
-    state_to_idx = {s:i for i, s in enumerate(states)}
-    idx_to_state = {i:s for i, s in enumerate(states)}
-
-    n_states = len(states)
-    trans_counts = np.zeros((n_states, n_states), dtype=int)
-
-    for traj in trajs:
-        for t in range(len(traj)-1):
-            i, j = state_to_idx[traj[t]], state_to_idx[traj[t+1]]
-            trans_counts[i,j] += 1
-    trans_counts[trans_counts < threshold] = 0
-
-    trans_prob = np.nan_to_num(np.asarray([trans_counts[i] / (np.sum(trans_counts[i]) or 1.0) for i in range(n_states)]))
-
-    if embedded:
-        _ = np.fill_diagonal(trans_prob, 0)
-        trans_prob_embedded = np.nan_to_num(np.asarray([trans_prob[i] / (np.sum(trans_counts[i]) or 1.0) for i in range(n_states)]))
-
-
-    n_outward_total = np.sum(trans_counts, axis=1)
-    n_outward_total_sum = np.sum(n_outward_total)
-
-    for i, n in enumerate(n_outward_total):
-        n_outward_total_dict[idx_to_state[i]] = (n, n/n_outward_total_sum)
-
-    for i in range(n_states):
-        target = {}
-        idx = np.argsort(trans_prob[i])[::-1]
-        if quiet is False:
-            print(f"\n========= {idx_to_state[i]} {n_outward_total[i]}===========")
-
-        for j in idx:
-            targetState = idx_to_state[j]
-            prob = trans_prob[i,j]
-            n_outward = trans_counts[i,j]
-            ci = 2 * np.sqrt(prob*(1-prob)/(n_outward_total[i] or 1e-10)) # or n_outward?
-
-            if j<12 and quiet is False:
-                print(targetState,
-                      f"\t\t{prob*100:.5f} +- {ci*100:.2f} %",
-                      f"\t{n_outward}")
-
-            #target.append((targetState, prob, ci, n_outward))
-            target[targetState] = (prob, ci, n_outward)
-        trans_prob_dict[idx_to_state[i]] = target
-    if return_matrix:
-        return trans_prob, state_to_idx, idx_to_state
-    else:
-        return trans_prob_dict, n_outward_total_dict
-
 

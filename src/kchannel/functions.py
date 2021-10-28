@@ -7,8 +7,6 @@ import logging
 import sys
 from functools import wraps
 
-
-
 def countTime(func):
     @wraps(func)
     def _time_it(*args, **kwargs):
@@ -21,7 +19,7 @@ def countTime(func):
     return _time_it
 
 def createLogger(loc):
-     # remove existing handlers, if any
+    # remove existing handlers, if any
     logger = logging.getLogger('kchannel')
     logger.handlers = []
 
@@ -619,11 +617,10 @@ def run(coor, traj, CADistance=False, ignoreS0ScavJump=True):
         if ts.frame % 1000 == 0:
             print('\r'+f'Finished processing frame {ts.frame} / {len(u.trajectory)}', end=' ')
     print("")
-
     occupancy[:len(k_occupancy)], double_occ = computeOccupancy_6BS(k_occupancy, w_occupancy)
     logger.info(f"Double occupancy at found in {len(double_occ)} frames. Check log file for details.")
     for t, i in double_occ:
-        logger.info(f"At frame {t}, double occupancy in S{i}")
+        logger.debug(f"At frame {t}, double occupancy in S{i}")
 
     if ignoreS0ScavJump:
         jumps[:len(k_occupancy)-1] = computeJumps_6BS_ignoreS0Scav(k_occupancy, w_occupancy)
@@ -665,8 +662,6 @@ def run(coor, traj, CADistance=False, ignoreS0ScavJump=True):
 
     # remove all handlers to avoid multiple logging
     logger.handlers = []
-    del logger
 
     return data
-
 
