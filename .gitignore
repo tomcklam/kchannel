@@ -1,4 +1,10 @@
-# Byte-compiled / optimized / DLL files
+#
+test/
+development.ipynb
+results.csv
+results.log
+
+## Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
