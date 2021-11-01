@@ -284,9 +284,9 @@ def getNonProteinIndex(coor):
     """
     u = mda.Universe(coor, in_memory=False)
 
-    indices = (u.select_atoms(f"resname K", updating=False).ix,
+    indices = (u.select_atoms(f"resname K POT", updating=False).ix,
            u.select_atoms(f"resname CL", updating=False).ix,
-           u.select_atoms(f"resname SOL and name OW", updating=False).ix)
+           u.select_atoms(f"(resname SOL and name OW) or (resname TIP3 and name OH2)", updating=False).ix)
 
     return indices
 
@@ -728,9 +728,10 @@ def run(coor, traj, CADistance=False, ignoreS0ScavJump=True):
             print('\r'+f'Finished processing frame {ts.frame} / {len(u.trajectory)}', end=' ')
     print("")
     occupancy[:len(k_occupancy)], double_occ = computeOccupancy_6BS(k_occupancy, w_occupancy)
-    logger.info(f"Double occupancy at found in {len(double_occ)} frames. Check log file for details.")
-    for t, i in double_occ:
-        logger.debug(f"At frame {t}, double occupancy in S{i}")
+    if len(double_occ) > 0:
+        logger.info(f"Double occupancy is found in {len(double_occ)} frames. Check log file for details.")
+        for t, i in double_occ:
+            logger.debug(f"At frame {t}, double occupancy in S{i}")
 
     if ignoreS0ScavJump:
         jumps[:len(k_occupancy)-1] = computeJumps_6BS_ignoreS0Scav(k_occupancy, w_occupancy)
