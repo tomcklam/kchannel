@@ -70,12 +70,15 @@ def loadResults(results_loc):
 
     return channel
 
-def computeStats(channel):
+def computeStats(channel, save=''):
     """
     Parameters
     ----------
     channel: object
         info about the channel, defined by the class Channel
+    
+    save: string
+        save stats to the location specified
 
     Returns
     -------
@@ -122,6 +125,12 @@ def computeStats(channel):
 
     stats = pd.DataFrame(stats_dict)
     states = pd.DataFrame(states_dict)
+
+    if save:
+        save = os.path.abspath(save)
+        stats.to_csv(save)
+        print(f"Stats saved to {save}")
+
     return stats, states
 
 def permeationEventsPartition(occupancy, jump, seedState, n_bs_jump):
