@@ -659,13 +659,19 @@ def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02, backwar
         hTs_all = np.asarray(hTs_all) * dt
         n_hTs = len(hTs_all)
 
-        hTs_all_mean = np.mean(hTs_all)
-        hTs_all_bs = scipy.stats.bootstrap((hTs_all, ), np.mean, confidence_level=.95,
-                                           n_resamples=10000, method='BCa')
-        hTs_all_bs_l, hTs_all_bs_u = hTs_all_bs.confidence_interval
+        if n_hTs > 1:
+            hTs_all_mean = np.mean(hTs_all)
+            print(n_hTs, hTs_all_mean)
+            hTs_all_bs = scipy.stats.bootstrap((hTs_all, ), np.mean, confidence_level=.95,
+                                               n_resamples=10000, method='BCa')
+            hTs_all_bs_l, hTs_all_bs_u = hTs_all_bs.confidence_interval
 
-        k_j_counts_mean = np.mean(k_j_counts)
-        w_j_counts_mean = np.mean(w_j_counts)
+            k_j_counts_mean = np.mean(k_j_counts)
+            w_j_counts_mean = np.mean(w_j_counts)
+        else:
+            hTs_all_mean = .0
+            hTs_all_bs_l, hTs_all_bs_u = .0, .0
+            k_j_counts_mean, w_j_counts_mean = .0, .0
 
         row = [inititalStates_label, finalStates_label, hTs_all_mean,
                hTs_all_bs_l, hTs_all_bs_u, n_hTs, k_j_counts_mean, w_j_counts_mean]
@@ -676,4 +682,3 @@ def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02, backwar
                       columns=["initial","final", "mean (ns)", "low (ns)",
                                "high (ns)", "n", "k_f", "w_f"])
     return df
-
