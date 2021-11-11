@@ -651,7 +651,7 @@ def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02, backwar
         finalStates_label = ','.join(finalStates)
 
         for occupancy, jumps in zip(occupancy_all, jumps_all):
-            hTs, k_j_counts, w_j_counts = kchannel.hittingTimes(occupancy, jumps, initialStates, finalStates,
+            hTs, k_j_counts, w_j_counts = hittingTimes(occupancy, jumps, initialStates, finalStates,
                                                                   n_bs_jump=4, backward=backward)
             hTs_all += hTs
             k_j_counts_all += k_j_counts
