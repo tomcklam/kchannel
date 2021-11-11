@@ -661,7 +661,6 @@ def permeationMFPT(occupancy_all, jumps_all, pairs, n_bs_jump=4, dt=.02, backwar
 
         if n_hTs > 1:
             hTs_all_mean = np.mean(hTs_all)
-            print(n_hTs, hTs_all_mean)
             hTs_all_bs = scipy.stats.bootstrap((hTs_all, ), np.mean, confidence_level=.95,
                                                n_resamples=10000, method='BCa')
             hTs_all_bs_l, hTs_all_bs_u = hTs_all_bs.confidence_interval
