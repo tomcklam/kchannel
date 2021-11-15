@@ -6,6 +6,7 @@ import os
 import logging
 import sys
 from functools import wraps
+from .markov import *
 
 def countTime(func):
     @wraps(func)
