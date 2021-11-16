@@ -150,7 +150,6 @@ def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0, allRes=False):
 
     return sf_layer
 
-
 def detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
     """ read coordinate file and return zero-indexed atom indices defining SF
 
@@ -290,13 +289,14 @@ def getNonProteinIndex(coor):
     u = mda.Universe(coor, in_memory=False)
 
     indices = (u.select_atoms(f"resname K POT", updating=False).ix,
-           u.select_atoms(f"resname CL", updating=False).ix,
-           u.select_atoms(f"(resname SOL and name OW) or (resname TIP3 and name OH2)", updating=False).ix)
+               u.select_atoms(f"resname CL CLA", updating=False).ix,
+               u.select_atoms(f"(resname SOL TIP3) and (name OH2 OW)", updating=False).ix)
+           #u.select_atoms(f"(resname SOL and name OW) or (resname TIP3 and name OH2)", updating=False).ix)
 
     return indices
 
 def findBound(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
-              d_min_inner_cutoff=4.0, d_min_outer_cutoff=4.0):
+              BScenter_cutoff=4.0, d_min_outer_cutoff=4.0):
     """ read soluent (K) or solvent (water) positions and assign their
     (zero-based) indicies to binding sites
 
@@ -314,9 +314,9 @@ def findBound(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
                             + the first boundary of the second binding site
     additional_bs_cutoff: float
         cutoff distance (in z-direction) in Angstrom for S0 and Scav
-    d_min_inner_cutoff: float
-        threshold distance in Angstrom for determining if the particle is touching and thus occupying
-        inner (neither the first nor the last binding sites) BSs
+    BScenter_cutoff: float
+        threshold distance between center of BSs and particle in Angstrom for determining if particle is occupying
+        one of the BSs
     d_min_outer_cutoff: float
         threshold distance in Angstrom for determining if the particle is touching and thus occupying
         outer (the first or the last binding sites) BSs
@@ -388,11 +388,11 @@ def findBound(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
 #             # need to touch two of them
 #             if np.sum(d_u < d_min_inner_cutoff) + np.sum(d_l < d_min_inner_cutoff) > 1:
 #                 occupancy[bs_i].append(idx)
-                
+
             bs_center = np.mean(bs_layer_pos[bs_i-1:bs_i+1], axis=1)
-            if np.linalg.norm(positions[idx] - bs_center) < d_min_inner_cutoff:
+            if np.linalg.norm(positions[idx] - bs_center) < BScenter_cutoff:
                 occupancy[bs_i].append(idx)
-            
+
 
     return occupancy
 
@@ -491,8 +491,6 @@ def findBound_pairwiseComparison(positions, sol_idx, bs_layer_idx, additional_bs
                 occupancy[bs_i].append(idx)
 
     return occupancy
-
-
 
 def checkFlips(pos_all, sf_o_idx, cutoff=5):
     """ check SF oxygen flips in a given frame
@@ -793,7 +791,8 @@ def computeJump_6BS_ignoreS0Scav(occ_t0, occ_t1, t0=0.0):
     return jump
 
 @countTime
-def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False, ignoreS0ScavJump=True, pairwise=False):
+def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
+        ignoreS0ScavJump=True, pairwise=False, BScenter_cutoff=4.0):
     path = os.path.dirname(traj)
 
     log_loc = os.path.abspath(os.path.join(path, 'results.log'))
@@ -805,7 +804,7 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False, ignoreS0S
 
     if sf_idx is None:
         sf_idx = detectSF(coor, quiet=True, allRes=SFScanAllRes)
-    
+
     sf_o_idx = np.array([sf_idx['O'][i]['idx'] for i in range(len(sf_idx['O']))])
     sf_ca_idx = np.array([sf_idx['CA'][i]['idx'] for i in range(len(sf_idx['CA']))])
 
@@ -834,13 +833,14 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False, ignoreS0S
             k_occ = findBound_pairwiseComparison(ts.positions, k_idx, sf_o_idx)
             w_occ = findBound_pairwiseComparison(ts.positions, water_idx, sf_o_idx)
         else:
-            k_occ = findBound(ts.positions, k_idx, sf_o_idx)
-            w_occ = findBound(ts.positions, water_idx, sf_o_idx)
+            k_occ = findBound(ts.positions, k_idx, sf_o_idx, BScenter_cutoff=BScenter_cutoff)
+            w_occ = findBound(ts.positions, water_idx, sf_o_idx, BScenter_cutoff=BScenter_cutoff)
         k_occupancy.append(k_occ)
         w_occupancy.append(w_occ)
         if ts.frame % 1000 == 0:
             print('\r'+f'Finished processing frame {ts.frame} / {len(u.trajectory)}', end=' ')
-            
+    #return k_occupancy
+
     print("")
     occupancy[:len(k_occupancy)], double_occ = computeOccupancy_6BS(k_occupancy, w_occupancy)
     if len(double_occ) > 0:
