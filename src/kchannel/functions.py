@@ -37,7 +37,7 @@ def createLogger(loc):
 
     return logger
 
-def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0):
+def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0, allRes=False):
     """ read coordinate file and return zero-indexed atom indices defining SF
 
     Parameters
@@ -51,6 +51,8 @@ def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0):
         requirement for being a part of SF
     og1_cutoff: float
         Same as o_cutoff, but it is for OG1 atom (like threonine's OG1)
+    allRes: boolean
+        If false, only GLY VAL TYR THR PHE ILE are considered when determining SF
 
     Returns
     -------
@@ -63,7 +65,10 @@ def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0):
 
     # Finding backbone oxygen atoms that meet the geometric requirements
     # TODO: devise better geometric criteria for finding residues forming SF
-    protein_o = u.select_atoms(f"protein and name O and (resname GLY VAL TYR THR PHE ILE)", updating=False)
+    if allRes:
+        protein_o = u.select_atoms(f"protein and name O", updating=False)
+    else:
+        protein_o = u.select_atoms(f"protein and name O and (resname GLY VAL TYR THR PHE ILE)", updating=False)
 
     resid = np.array([atom.resid for atom in protein_o])
     d_matrix = np.linalg.norm((protein_o.positions[:, np.newaxis] - protein_o.positions), axis=-1)
@@ -144,7 +149,6 @@ def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0):
                     print(f"{idx}\t{layer}\t{chain_id}\t{resid}\t{resname}\t{name}")
 
     return sf_layer
-
 
 
 def detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
@@ -789,7 +793,7 @@ def computeJump_6BS_ignoreS0Scav(occ_t0, occ_t1, t0=0.0):
     return jump
 
 @countTime
-def run(coor, traj, CADistance=False, ignoreS0ScavJump=True, pairwise=False):
+def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False, ignoreS0ScavJump=True, pairwise=False):
     path = os.path.dirname(traj)
 
     log_loc = os.path.abspath(os.path.join(path, 'results.log'))
@@ -799,7 +803,10 @@ def run(coor, traj, CADistance=False, ignoreS0ScavJump=True, pairwise=False):
 
     u = mda.Universe(coor, traj, in_memory=False)
 
-    sf_idx = detectSF(coor, quiet=True)
+    if sf_idx is None:
+        sf_idx = detectSF(coor, quiet=False, allRes=SFScanAllRes)
+    
+    
     sf_o_idx = np.array([sf_idx['O'][i]['idx'] for i in range(len(sf_idx['O']))])
     sf_ca_idx = np.array([sf_idx['CA'][i]['idx'] for i in range(len(sf_idx['CA']))])
 
@@ -834,6 +841,7 @@ def run(coor, traj, CADistance=False, ignoreS0ScavJump=True, pairwise=False):
         w_occupancy.append(w_occ)
         if ts.frame % 1000 == 0:
             print('\r'+f'Finished processing frame {ts.frame} / {len(u.trajectory)}', end=' ')
+            
     print("")
     occupancy[:len(k_occupancy)], double_occ = computeOccupancy_6BS(k_occupancy, w_occupancy)
     if len(double_occ) > 0:
@@ -883,4 +891,3 @@ def run(coor, traj, CADistance=False, ignoreS0ScavJump=True, pairwise=False):
     logger.handlers = []
 
     return data
-
