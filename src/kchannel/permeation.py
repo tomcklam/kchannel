@@ -89,15 +89,16 @@ def computeStats(channel, save=''):
     states: Pandas dataframe
         point estimate and bootstrap confidence interval for occupation states
     """
+    
     try:
-        if len(channel.currents) > 2:
-            current_bs = scipy.stats.bootstrap((channel.currents,), np.mean, confidence_level=.95, n_resamples=10000, method='BCa')
-            current_bs_l, current_bs_h = current_bs.confidence_interval
-            channel.current = (np.mean(channel.currents), current_bs_l, current_bs_h)
-            print(f"Current (pA): {channel.current[0]:.3f}\t{current_bs_l:.3f} - {current_bs_h:.3f}\n")
+        current_bs = scipy.stats.bootstrap((channel.currents,), np.mean, confidence_level=.95, n_resamples=10000, method='BCa')
+        current_bs_l, current_bs_h = current_bs.confidence_interval
+        channel.current = (np.mean(channel.currents), current_bs_l, current_bs_h)
+        print(f"Current (pA): {channel.current[0]:.3f}\t{current_bs_l:.3f} - {current_bs_h:.3f}\n")
     except:
-            channel.current = (np.mean(channel.currents), np.mean(channel.currents), np.mean(channel.currents))
-            print(f"Current (pA): {channel.current[0]:.3f}\n")
+        channel.current = (np.mean(channel.currents), np.mean(channel.currents), np.mean(channel.currents))
+        print(f"Current (pA): {channel.current[0]:.3f}\n")
+
 
     states, counts = np.unique(np.concatenate(channel.occupancy_6_all), return_counts=True)
     sort_idx = np.argsort(counts)[::-1]
@@ -118,13 +119,12 @@ def computeStats(channel, save=''):
     for s, p_mean in zip(states, population):
         ps = np.array([np.mean(occupancy == s) for occupancy in channel.occupancy_6_all])
         stats_dict[s] = ps
-        
-        if len(channel.occupancy_6_all) > 2:
+        try:
             p_bs = scipy.stats.bootstrap((ps,), np.mean, confidence_level=.95, n_resamples=10000, method='BCa')
             p_l, p_h = p_bs.confidence_interval
             p_ls.append(p_l)
             p_hs.append(p_h)
-        else:
+        except:
             p_ls.append(p_mean)
             p_hs.append(p_mean)
 
