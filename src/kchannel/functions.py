@@ -804,8 +804,7 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False, ignoreS0S
     u = mda.Universe(coor, traj, in_memory=False)
 
     if sf_idx is None:
-        sf_idx = detectSF(coor, quiet=False, allRes=SFScanAllRes)
-    
+        sf_idx = detectSF(coor, quiet=True, allRes=SFScanAllRes)
     
     sf_o_idx = np.array([sf_idx['O'][i]['idx'] for i in range(len(sf_idx['O']))])
     sf_ca_idx = np.array([sf_idx['CA'][i]['idx'] for i in range(len(sf_idx['CA']))])
