@@ -5,4 +5,4 @@ git clone https://github.com/tomcklam/kchannel
 cd kchannel
 pip install .
 ```
-See notebook.ipynb for usage. 
+See example.ipynb for usage. 
