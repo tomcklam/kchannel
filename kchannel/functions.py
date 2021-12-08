@@ -8,7 +8,7 @@ import sys
 from functools import wraps
 from .markov import *
 
-def countTime(func):
+def _countTime(func):
     @wraps(func)
     def _time_it(*args, **kwargs):
         start = time.time()
@@ -19,7 +19,7 @@ def countTime(func):
             print(f"Total execution time: {end - start:.5f} s\n\n")
     return _time_it
 
-def createLogger(loc):
+def _createLogger(loc):
     # remove existing handlers, if any
     logger = logging.getLogger('kchannel')
     logger.handlers = []
@@ -150,7 +150,7 @@ def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0, allRes=False):
 
     return sf_layer
 
-def detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
+def _detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
     """ read coordinate file and return zero-indexed atom indices defining SF
 
     Parameters
@@ -272,7 +272,7 @@ def detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
 
     return sf_layer
 
-def getNonProteinIndex(coor):
+def _getNonProteinIndex(coor):
     """ read coordinate file and return zero-indexed atom indices defining SF
 
     Parameters
@@ -295,7 +295,7 @@ def getNonProteinIndex(coor):
 
     return indices
 
-def findBound(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
+def _findBound(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
               BScenter_cutoff=4.0, d_min_outer_cutoff=4.0):
     """ read soluent (K) or solvent (water) positions and assign their
     (zero-based) indicies to binding sites
@@ -396,7 +396,7 @@ def findBound(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
 
     return occupancy
 
-def findBound_pairwiseComparison(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
+def _findBound_pairwiseComparison(positions, sol_idx, bs_layer_idx, additional_bs_cutoff=4.0,
               d_min_inner_cutoff=4.0, d_min_outer_cutoff=4.0):
     """ read soluent (K) or solvent (water) positions and assign their
     (zero-based) indicies to binding sites
@@ -492,7 +492,7 @@ def findBound_pairwiseComparison(positions, sol_idx, bs_layer_idx, additional_bs
 
     return occupancy
 
-def checkFlips(pos_all, sf_o_idx, cutoff=5):
+def _checkFlips(pos_all, sf_o_idx, cutoff=5):
     """ check SF oxygen flips in a given frame
 
     Parameters
@@ -520,7 +520,7 @@ def checkFlips(pos_all, sf_o_idx, cutoff=5):
 
     return flips
 
-def computeSFAtomDistance(pos_all, sf_atom_idx):
+def _computeSFAtomDistance(pos_all, sf_atom_idx):
     """ calculate diagonal distance of SF atoms, e.g. O and CA
 
     Parameters
@@ -544,7 +544,7 @@ def computeSFAtomDistance(pos_all, sf_atom_idx):
     d = np.array(d)
     return d
 
-def computeOccupancy_6BS(k_occ_whole, w_occ_whole, bs_ignore=[0, 5]):
+def _computeOccupancy_6BS(k_occ_whole, w_occ_whole, bs_ignore=[0, 5]):
     """ compute SF occupancy labels
 
     Parameters
@@ -591,7 +591,7 @@ def computeOccupancy_6BS(k_occ_whole, w_occ_whole, bs_ignore=[0, 5]):
     occ_whole = np.array(occ_whole)
     return occ_whole, double_occ
 
-def computeJumps_6BS(k_occ_all, w_occ_all):
+def _computeJumps_6BS(k_occ_all, w_occ_all):
     """ compute ion and water net jump for the whole trajectory
 
     Parameters
@@ -613,11 +613,11 @@ def computeJumps_6BS(k_occ_all, w_occ_all):
 
     jumps = np.zeros((len(k_occ_all)-1, 2), dtype=int)
     for i in range(len(jumps)):
-        jumps[i, 0] = computeJump_6BS(k_occ_all[i], k_occ_all[i+1], t0=i)
-        jumps[i, 1] = computeJump_6BS(w_occ_all[i], w_occ_all[i+1], t0=i)
+        jumps[i, 0] = _computeJump_6BS(k_occ_all[i], k_occ_all[i+1], t0=i)
+        jumps[i, 1] = _computeJump_6BS(w_occ_all[i], w_occ_all[i+1], t0=i)
     return jumps
 
-def computeJump_6BS(occ_t0, occ_t1, t0=0.0):
+def _computeJump_6BS(occ_t0, occ_t1, t0=0.0):
     """ compute net number of jumps given the current and the next occupation states
 
     Parameters
@@ -688,7 +688,7 @@ def computeJump_6BS(occ_t0, occ_t1, t0=0.0):
                 jump += old_pos_idx - bs_i_t1
     return jump
 
-def computeJumps_6BS_ignoreS0Scav(k_occ_all, w_occ_all):
+def _computeJumps_6BS_ignoreS0Scav(k_occ_all, w_occ_all):
     """ compute ion and water net jump for the whole trajectory
         *** it ignores jump across S0 and Scav (S5) ***
         e.g. t_0 = [[],[],[],[],[],[]]
@@ -714,11 +714,11 @@ def computeJumps_6BS_ignoreS0Scav(k_occ_all, w_occ_all):
 
     jumps = np.zeros((len(k_occ_all)-1, 2), dtype=int)
     for i in range(len(jumps)):
-        jumps[i, 0] = computeJump_6BS_ignoreS0Scav(k_occ_all[i], k_occ_all[i+1], t0=i)
-        jumps[i, 1] = computeJump_6BS_ignoreS0Scav(w_occ_all[i], w_occ_all[i+1], t0=i)
+        jumps[i, 0] = _computeJump_6BS_ignoreS0Scav(k_occ_all[i], k_occ_all[i+1], t0=i)
+        jumps[i, 1] = _computeJump_6BS_ignoreS0Scav(w_occ_all[i], w_occ_all[i+1], t0=i)
     return jumps
 
-def computeJump_6BS_ignoreS0Scav(occ_t0, occ_t1, t0=0.0):
+def _computeJump_6BS_ignoreS0Scav(occ_t0, occ_t1, t0=0.0):
     """ compute net number of jumps given the current and the next occupation states
         *** it ignores jump across S0 and Scav (S5) ***
 
@@ -790,7 +790,7 @@ def computeJump_6BS_ignoreS0Scav(occ_t0, occ_t1, t0=0.0):
                 jump += old_pos_idx - bs_i_t1
     return jump
 
-@countTime
+@_countTime
 def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
         ignoreS0ScavJump=True, pairwise=False, BScenter_cutoff=4.0):
     path = os.path.dirname(traj)
@@ -798,7 +798,7 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
     log_loc = os.path.abspath(os.path.join(path, 'results.log'))
 
     # remove handlers if any
-    logger = createLogger(log_loc)
+    logger = _createLogger(log_loc)
 
     u = mda.Universe(coor, traj, in_memory=False)
 
@@ -808,7 +808,7 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
     sf_o_idx = np.array([sf_idx['O'][i]['idx'] for i in range(len(sf_idx['O']))])
     sf_ca_idx = np.array([sf_idx['CA'][i]['idx'] for i in range(len(sf_idx['CA']))])
 
-    k_idx, cl_idx, water_idx = getNonProteinIndex(coor)
+    k_idx, cl_idx, water_idx = _getNonProteinIndex(coor)
 
     k_occupancy = []
     w_occupancy = []
@@ -825,16 +825,16 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
     print("Reading trajectory")
     for ts in u.trajectory:
         if CADistance:
-            o_d_diag[ts.frame] = computeSFAtomDistance(ts.positions, sf_o_idx)
-            ca_d_diag[ts.frame] = computeSFAtomDistance(ts.positions, sf_ca_idx)
+            o_d_diag[ts.frame] = _computeSFAtomDistance(ts.positions, sf_o_idx)
+            ca_d_diag[ts.frame] = _computeSFAtomDistance(ts.positions, sf_ca_idx)
 
-        flips[ts.frame] = checkFlips(ts.positions, sf_o_idx)
+        flips[ts.frame] = _checkFlips(ts.positions, sf_o_idx)
         if pairwise:
-            k_occ = findBound_pairwiseComparison(ts.positions, k_idx, sf_o_idx)
-            w_occ = findBound_pairwiseComparison(ts.positions, water_idx, sf_o_idx)
+            k_occ = _findBound_pairwiseComparison(ts.positions, k_idx, sf_o_idx)
+            w_occ = _findBound_pairwiseComparison(ts.positions, water_idx, sf_o_idx)
         else:
-            k_occ = findBound(ts.positions, k_idx, sf_o_idx, BScenter_cutoff=BScenter_cutoff)
-            w_occ = findBound(ts.positions, water_idx, sf_o_idx, BScenter_cutoff=BScenter_cutoff)
+            k_occ = _findBound(ts.positions, k_idx, sf_o_idx, BScenter_cutoff=BScenter_cutoff)
+            w_occ = _findBound(ts.positions, water_idx, sf_o_idx, BScenter_cutoff=BScenter_cutoff)
         k_occupancy.append(k_occ)
         w_occupancy.append(w_occ)
         if ts.frame % 1000 == 0:
@@ -842,16 +842,16 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
     #return k_occupancy
 
     print("")
-    occupancy[:len(k_occupancy)], double_occ = computeOccupancy_6BS(k_occupancy, w_occupancy)
+    occupancy[:len(k_occupancy)], double_occ = _computeOccupancy_6BS(k_occupancy, w_occupancy)
     if len(double_occ) > 0:
         logger.info(f"Double occupancy is found in {len(double_occ)} frames. Check log file for details.")
         for t, i in double_occ:
             logger.debug(f"At frame {t}, double occupancy in S{i}")
 
     if ignoreS0ScavJump:
-        jumps[:len(k_occupancy)-1] = computeJumps_6BS_ignoreS0Scav(k_occupancy, w_occupancy)
+        jumps[:len(k_occupancy)-1] = _computeJumps_6BS_ignoreS0Scav(k_occupancy, w_occupancy)
     else:
-        jumps[:len(k_occupancy)-1] = computeJumps_6BS(k_occupancy, w_occupancy)
+        jumps[:len(k_occupancy)-1] = _computeJumps_6BS(k_occupancy, w_occupancy)
 
     if ignoreS0ScavJump:
         n_k_netjumps = np.sum(jumps[:, 0]) // 5 #(len(occupancy[0]) + 1)
@@ -881,7 +881,7 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
 
     data_loc = os.path.abspath(os.path.join(path, 'results.csv'))
     data = pd.DataFrame(data, columns=columns)
-    _ = data.to_csv(data_loc)
+    data.to_csv(data_loc)
     logger.info(f"Results saved to {data_loc}")
     logger.info(f"Log saved to {log_loc}")
     logger.info("=================================")
@@ -889,4 +889,4 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
     # remove all handlers to avoid multiple logging
     logger.handlers = []
 
-    return data
+    #return data
