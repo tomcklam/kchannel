@@ -1,14 +1,23 @@
-import setuptools
+from setuptools import setup
+import os
+import sys
 
-with open("README.md", "r", encoding="utf-8") as f:
+_here = os.path.abspath(os.path.dirname(__file__))
+
+with open(os.path.join(_here, "README.md"), "r", encoding="utf-8") as f:
     long_description = f.read()
 
-with open("requirements.txt", "r") as f:
+with open(os.path.join(_here, "requirements.txt"), "r") as f:
     install_requires = f.read().splitlines()
 
-setuptools.setup(
+version = {}
+with open(os.path.join(_here, "kchannel", "version.py"), "r") as f:
+    exec(f.read(), version)
+
+
+setup(
     name="kchannel",
-    version="0.0.1",
+    version=version['__version__'],
     author="Chun Kei Lam",
     author_email="chun-kei.lam@mpibpc.mpg.de",
     description="Analysis tool for potassium channels in MD simulations",
@@ -19,8 +28,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    package_dir={"": "src"},
-    packages=setuptools.find_packages(where="src"),
+    packages=['kchannel'],
     python_requires=">=3.6",
     install_requires=install_requires
 )
