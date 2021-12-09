@@ -1,5 +1,5 @@
 #
-testcase/
+tests/
 development.ipynb
 results.csv
 results.log

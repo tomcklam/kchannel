@@ -6,7 +6,6 @@ import os
 import logging
 import sys
 from functools import wraps
-from .markov import *
 
 def _countTime(func):
     @wraps(func)
@@ -37,7 +36,7 @@ def _createLogger(loc):
 
     return logger
 
-def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0, allRes=False):
+def detectSF(coor, quiet=False, returnIdx=False, o_cutoff=5, og1_cutoff=7.0, allRes=False):
     """ read coordinate file and return zero-indexed atom indices defining SF
 
     Parameters
@@ -56,7 +55,7 @@ def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0, allRes=False):
 
     Returns
     -------
-    sf_layer: dict
+    sf_idx: dict
         consisting of two dictionaries containing atom idx (zero-based) and residue id of
         SF's oxygen (backbone and hydroxyl) and CA atoms respectively
 
@@ -114,41 +113,42 @@ def detectSF(coor, quiet=False, o_cutoff=5, og1_cutoff=7.0, allRes=False):
     sf_o = u.select_atoms(f"protein and index  {' '.join([str(atom.ix) for atom in sf_o+sf_og1])}", updating=False)
 
     #TODO: assigning binding sites based on atoms' coordinates?
-    sf_layer = {'O':{}, 'CA':{}}
+    sf_idx = {'O':{}, 'CA':{}}
     for sf_atom, name in zip([sf_o, sf_ca], ['O', 'CA']):
         # number of layer = # atoms // 4
         layer_id = len(sf_atom) // 4 - 1
         for atom in sf_atom:
-            if layer_id not in sf_layer[name].keys():
-                sf_layer[name][layer_id] = {'idx': [atom.ix], 'resid':[atom.resid],
+            if str(layer_id) not in sf_idx[name].keys():
+                sf_idx[name][str(layer_id)] = {'idx': [int(atom.ix)], 'resid':[int(atom.resid)],
                                            'resname':[atom.resname], 'name':[atom.name]}
             else:
-                sf_layer[name][layer_id]['idx'].append(atom.ix)
-                sf_layer[name][layer_id]['resid'].append(atom.resid)
-                sf_layer[name][layer_id]['resname'].append(atom.resname)
-                sf_layer[name][layer_id]['name'].append(atom.name)
+                sf_idx[name][str(layer_id)]['idx'].append(int(atom.ix))
+                sf_idx[name][str(layer_id)]['resid'].append(int(atom.resid))
+                sf_idx[name][str(layer_id)]['resname'].append(atom.resname)
+                sf_idx[name][str(layer_id)]['name'].append(atom.name)
             layer_id = layer_id-1 if layer_id != 0 else (len(sf_atom) // 4 - 1)
 
     # rearrange order so that the first atom is the diagonal pair of the second atom,
     # and the third is the diagonal pair of the fourth one
-    sf_ca_0_pos = u.select_atoms('all').positions[sf_layer['CA'][0]['idx']]
+    sf_ca_0_pos = u.select_atoms('all').positions[sf_idx['CA'][str(0)]['idx']]
     i_oppositeTo0 = np.linalg.norm(sf_ca_0_pos - sf_ca_0_pos[0], axis=1).argmax()
 
     if not quiet:
         print(f"idx\tlayer\tchain\tresid\tresname\tname")
-    for atomtype in sf_layer.keys():
-        for layer in sf_layer[atomtype].keys():
-            for info in sf_layer[atomtype][layer].keys():
-                sf_layer[atomtype][layer][info][1], sf_layer[atomtype][layer][info][i_oppositeTo0] = \
-                sf_layer[atomtype][layer][info][i_oppositeTo0], sf_layer[atomtype][layer][info][1]
+    for atomtype in sf_idx.keys():
+        for layer in sf_idx[atomtype].keys():
+            for info in sf_idx[atomtype][layer].keys():
+                sf_idx[atomtype][layer][info][1], sf_idx[atomtype][layer][info][i_oppositeTo0] = \
+                sf_idx[atomtype][layer][info][i_oppositeTo0], sf_idx[atomtype][layer][info][1]
             if atomtype == 'O' and not quiet:
-                for chain_id, idx in enumerate(sf_layer[atomtype][layer]['idx']):
-                    resid = sf_layer[atomtype][layer]['resid'][chain_id]
-                    resname = sf_layer[atomtype][layer]['resname'][chain_id]
-                    name = sf_layer[atomtype][layer]['name'][chain_id]
+                for chain_id, idx in enumerate(sf_idx[atomtype][layer]['idx']):
+                    resid = sf_idx[atomtype][layer]['resid'][chain_id]
+                    resname = sf_idx[atomtype][layer]['resname'][chain_id]
+                    name = sf_idx[atomtype][layer]['name'][chain_id]
                     print(f"{idx}\t{layer}\t{chain_id}\t{resid}\t{resname}\t{name}")
 
-    return sf_layer
+    if returnIdx:
+        return sf_idx
 
 def _detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
     """ read coordinate file and return zero-indexed atom indices defining SF
@@ -167,7 +167,7 @@ def _detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
 
     Returns
     -------
-    sf_layer: dict
+    sf_idx: dict
         consisting of two dictionaries containing atom idx (zero-based) and residue id of
         SF's oxygen (backbone and hydroxyl) and CA atoms respectively
 
@@ -236,41 +236,41 @@ def _detectSF_backup(coor, quiet=False, o_cutoff=4.75, og1_cutoff=6.0):
 
 
 
-    sf_layer = {'O':{}, 'CA':{}}
+    sf_idx = {'O':{}, 'CA':{}}
     for sf_atom, name in zip([sf_o, sf_ca], ['O', 'CA']):
         # number of layer = # atoms // 4
         layer_id = len(sf_atom) // 4 - 1
         for atom in sf_atom:
-            if layer_id not in sf_layer[name].keys():
-                sf_layer[name][layer_id] = {'idx': [atom.ix], 'resid':[atom.resid],
+            if layer_id not in sf_idx[name].keys():
+                sf_idx[name][layer_id] = {'idx': [atom.ix], 'resid':[atom.resid],
                                            'resname':[atom.resname], 'name':[atom.name]}
             else:
-                sf_layer[name][layer_id]['idx'].append(atom.ix)
-                sf_layer[name][layer_id]['resid'].append(atom.resid)
-                sf_layer[name][layer_id]['resname'].append(atom.resname)
-                sf_layer[name][layer_id]['name'].append(atom.name)
+                sf_idx[name][layer_id]['idx'].append(atom.ix)
+                sf_idx[name][layer_id]['resid'].append(atom.resid)
+                sf_idx[name][layer_id]['resname'].append(atom.resname)
+                sf_idx[name][layer_id]['name'].append(atom.name)
             layer_id = layer_id-1 if layer_id != 0 else (len(sf_atom) // 4 - 1)
 
     # rearrange order so that the first atom is the diagonal pair of the second atom,
     # and the third is the diagonal pair of the fourth one
-    sf_ca_0_pos = u.select_atoms('all').positions[sf_layer['CA'][0]['idx']]
+    sf_ca_0_pos = u.select_atoms('all').positions[sf_idx['CA'][0]['idx']]
     i_oppositeTo0 = np.linalg.norm(sf_ca_0_pos - sf_ca_0_pos[0], axis=1).argmax()
 
     if not quiet:
         print(f"idx\tlayer\tchain\tresid\tresname\tname")
-    for atomtype in sf_layer.keys():
-        for layer in sf_layer[atomtype].keys():
-            for info in sf_layer[atomtype][layer].keys():
-                sf_layer[atomtype][layer][info][1], sf_layer[atomtype][layer][info][i_oppositeTo0] = \
-                sf_layer[atomtype][layer][info][i_oppositeTo0], sf_layer[atomtype][layer][info][1]
+    for atomtype in sf_idx.keys():
+        for layer in sf_idx[atomtype].keys():
+            for info in sf_idx[atomtype][layer].keys():
+                sf_idx[atomtype][layer][info][1], sf_idx[atomtype][layer][info][i_oppositeTo0] = \
+                sf_idx[atomtype][layer][info][i_oppositeTo0], sf_idx[atomtype][layer][info][1]
             if atomtype == 'O' and not quiet:
-                for chain_id, idx in enumerate(sf_layer[atomtype][layer]['idx']):
-                    resid = sf_layer[atomtype][layer]['resid'][chain_id]
-                    resname = sf_layer[atomtype][layer]['resname'][chain_id]
-                    name = sf_layer[atomtype][layer]['name'][chain_id]
+                for chain_id, idx in enumerate(sf_idx[atomtype][layer]['idx']):
+                    resid = sf_idx[atomtype][layer]['resid'][chain_id]
+                    resname = sf_idx[atomtype][layer]['resname'][chain_id]
+                    name = sf_idx[atomtype][layer]['name'][chain_id]
                     print(f"{idx}\t{layer}\t{chain_id}\t{resid}\t{resname}\t{name}")
 
-    return sf_layer
+    return sf_idx
 
 def _getNonProteinIndex(coor):
     """ read coordinate file and return zero-indexed atom indices defining SF
@@ -803,10 +803,10 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
     u = mda.Universe(coor, traj, in_memory=False)
 
     if sf_idx is None:
-        sf_idx = detectSF(coor, quiet=True, allRes=SFScanAllRes)
+        sf_idx = detectSF(coor, quiet=True, returnIdx=True, allRes=SFScanAllRes)
 
-    sf_o_idx = np.array([sf_idx['O'][i]['idx'] for i in range(len(sf_idx['O']))])
-    sf_ca_idx = np.array([sf_idx['CA'][i]['idx'] for i in range(len(sf_idx['CA']))])
+    sf_o_idx = np.array([sf_idx['O'][str(i)]['idx'] for i in range(len(sf_idx['O']))])
+    sf_ca_idx = np.array([sf_idx['CA'][str(i)]['idx'] for i in range(len(sf_idx['CA']))])
 
     k_idx, cl_idx, water_idx = _getNonProteinIndex(coor)
 
@@ -873,8 +873,8 @@ def run(coor, traj, sf_idx=None, SFScanAllRes=False, CADistance=False,
     if CADistance:
         data = np.hstack((occupancy.reshape(-1, 1), jumps, flips, ca_d_diag, o_d_diag)).astype("<8U")
         columns = ['occupancy', 'j_k', 'j_w'] + [f"flip_{i}" for i in range(len(sf_o_idx))] + \
-        [f"{sf_idx['CA'][i]['name'][0]}_{sf_idx['CA'][i]['resid'][0]}_{j}" for i in range(len(sf_idx['CA'])) for j in range(2)] + \
-        [f"{sf_idx['O'][i]['name'][0]}_{sf_idx['O'][i]['resid'][0]}_{j}" for i in range(len(sf_idx['O'])) for j in range(2)]
+        [f"{sf_idx['CA'][str(i)]['name'][0]}_{sf_idx['CA'][str(i)]['resid'][0]}_{j}" for i in range(len(sf_idx['CA'])) for j in range(2)] + \
+        [f"{sf_idx['O'][str(i)]['name'][0]}_{sf_idx['O'][str(i)]['resid'][0]}_{j}" for i in range(len(sf_idx['O'])) for j in range(2)]
     else:
         data = np.hstack((occupancy.reshape(-1, 1), jumps, flips)).astype("<8U")
         columns = ['occupancy', 'j_k', 'j_w'] + [f'flip_{i}' for i in range(len(sf_o_idx))]
